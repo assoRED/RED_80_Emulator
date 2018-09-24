@@ -9,6 +9,9 @@ extern "C"
 #include "../libz80/z80.h"
 }
 
+bool verbose = true;
+bool debug_read = false;
+
 std::array<uint8_t, 64 * 1024> address_space{0};
 
 #define SYS_ROM_LOCATION	0x0000
@@ -51,6 +54,10 @@ void loadRoms(const std::string& sys_binary, const std::string& user_binary)
 	//copy the 8k in the address space
 	install_rom(rom::system, rom.data());
 
+
+	//fill array with 0s
+	std::generate(rom.begin(), rom.end(), [] {return 0; });
+
 	if (user_binary.empty()) return;
 
 	{ //input file context
@@ -59,11 +66,7 @@ void loadRoms(const std::string& sys_binary, const std::string& user_binary)
 		std::copy(std::istreambuf_iterator<char>(sys_rom_input_stream), std::istreambuf_iterator<char>(), rom.begin());
 	} //close file
 
-	//fill array with 0
-	std::generate(rom.begin(), rom.end(), [] {return 0; });
-	
 	install_rom(rom::user, rom.data());
-
 }
 
 enum class device
@@ -87,20 +90,27 @@ device checkDevice(uint16_t addr)
 
 byte bus_read(int param, ushort addr)
 {
+	if (verbose&&!debug_read) fprintf(stderr, "cpu reading location %4X\n", addr);
 	switch (checkDevice(addr))
 	{
 	case device::rom:
 	case device::ram:
 		return address_space[addr];
 	case device::serial:
-		throw std::runtime_error("serial i/o not implemented yet");
+		if(!debug_read)
+			throw std::runtime_error("serial i/o not implemented yet");
+		break;
 	case device::other:
+		if(!debug_read)
 		throw std::runtime_error("No RED_80 expansion support on the emulator (yet)");
 	}
+
+	return 0x00;
 }
 
 void bus_write(int param, ushort addr, byte data)
 {
+	if (verbose) fprintf(stderr, "cpu writing %2X to location %4X\n", data, addr);
 	switch(checkDevice(addr))
 	{
 	case device::rom:
@@ -135,22 +145,32 @@ int main(int argc, char** argv)
 	Z80Context ctx;
 	ctx.memRead = bus_read;
 	ctx.memWrite = bus_write;
-	//TODO I don't know a thing about the z80 I/O read/write scheme. 
+	//TODO I don't know a thing about the z80 I/O read/write scheme.
 	//ctx.ioRead = bus_read;
 	//ctx.ioWrite = bus_write;
 
 	Z80RESET(&ctx);
 
-	//TODO I'm cheating here by setting the stack pointer myself : 
-	ctx.R1.wr.SP = 0xFFFF;
-
-	while(ctx.PC < 0x4000)
+	bool emulate = true;
+	while(emulate)
 	{
+		debug_read = true;
 		Z80Debug(&ctx, nullptr, debug_decode);
-		std::cout << "next CPU instruction " << debug_decode << '\n';
-		Z80Execute(&ctx);
+		std::cerr << "next CPU instruction " << debug_decode << '\n';
+		debug_read = false;
+		try
+		{
+			Z80Execute(&ctx);
+		}
+		catch (const std::exception& e)
+		{
+			std::cerr << e.what();
+			emulate = false;
+#ifdef _DEBUG
+			throw;
+#endif
+		}
 	}
 
-	std::cout << "RED_80\n";
 	return 0;
 }
