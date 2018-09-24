@@ -3,6 +3,9 @@
 #include <array>
 #include <string>
 #include <iterator>
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
 
 extern "C"
 {
@@ -43,6 +46,7 @@ void install_rom(rom type, const uint8_t* data)
 
 void loadRoms(const std::string& sys_binary, const std::string& user_binary)
 {
+	std::cout << "Loading roms : " << sys_binary << ' ' << user_binary << '\n';
 	std::array<uint8_t, 8 * 1024> rom{0};
 	{ //input file context
 		std::ifstream sys_rom_input_stream(sys_binary, std::ios::binary);
